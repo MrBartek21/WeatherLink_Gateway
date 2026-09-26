@@ -1,6 +1,7 @@
 import threading
 import time
 import socket
+import os
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -25,6 +26,9 @@ class OLEDDisplay:
         self.last_page = time.monotonic()
 
         self.start_time = time.monotonic()
+        self.cpu_previous = None
+        self.cpu_cached = 0.0
+        self.cpu_sample_time = 0.0
 
         self.lock = threading.Lock()
 
@@ -182,17 +186,17 @@ class OLEDDisplay:
 
         # Większa i czytelniejsza czcionka
         title_font = self._font(
-            11,
+            10,
             bold=True
         )
 
         normal_font = self._font(
-            10,
+            9,
             bold=False
         )
 
         small_font = self._font(
-            9,
+            8,
             bold=False
         )
 
@@ -202,15 +206,15 @@ class OLEDDisplay:
 
             if index == 0:
                 font = title_font
-                step = 12
+                step = 11
 
             elif index >= 5:
                 font = small_font
-                step = 10
+                step = 9
 
             else:
                 font = normal_font
-                step = 11
+                step = 10
 
             text = str(line)
 
@@ -343,10 +347,11 @@ class OLEDDisplay:
                 weather.append(f"P  {p.get('bmp_pressure', 0) / 100:.1f} hPa")
             if status & 0x04:
                 weather.append(f"DS {p.get('ds_temperature', 0):.1f} C")
+            else:
+                weather.append("DS --.- C")
             if status & 0x08:
                 weather.append(f"LIGHT {p.get('light', 0)}")
-            if len(weather) > 1:
-                pages.append(weather)
+            pages.append(weather)
 
             energy = [f"ZASILANIE NODE {node_id}"]
             if status & 0x10:
@@ -355,18 +360,59 @@ class OLEDDisplay:
                 energy.append(f"CH1 {p.get('ina1_current', 0):.2f} A")
                 energy.append(f"CH2 {p.get('ina2_voltage', 0):.2f}V {p.get('ina2_current', 0):.2f}A")
                 energy.append(f"CH3 {p.get('ina3_voltage', 0):.2f}V {p.get('ina3_current', 0):.2f}A")
-            if len(energy) > 1:
-                pages.append(energy)
+            else:
+                energy += ["Bateria --.-V --%", "CH1 --", "CH2 --", "CH3 --"]
+            energy.append(f"SEQ {p.get('sequence', '-')}")
+            pages.append(energy)
 
-            pages.append([
-                f"SYSTEM  NODE {node_id}",
-                f"IP {self.get_ip()}",
-                f"UP {self.get_uptime()}",
-                f"SEQ {p.get('sequence', '-')}",
-                "NRF  CRC OK"
-            ])
+        ids = ", ".join(sorted(self.node_packets.keys(), key=int))
+        pages.append([
+            "SYSTEM GATEWAY",
+            f"NODY: {ids}"[:22],
+            f"UP {self.get_uptime()}",
+            f"CPU {self.get_cpu_usage():.0f}%",
+            f"RAM {self.get_ram_usage():.0f}%"
+        ])
 
         return pages
+
+    def get_cpu_usage(self):
+        now = time.monotonic()
+        if now - self.cpu_sample_time < 1.0:
+            return self.cpu_cached
+        try:
+            with open("/proc/stat", "r", encoding="ascii") as f:
+                fields = f.readline().split()[1:]
+            values = [int(value) for value in fields]
+            idle = values[3] + (values[4] if len(values) > 4 else 0)
+            total = sum(values)
+            previous = self.cpu_previous
+            self.cpu_previous = (idle, total)
+            self.cpu_sample_time = now
+            if previous is None:
+                self.cpu_cached = 0.0
+                return self.cpu_cached
+            idle_delta = idle - previous[0]
+            total_delta = total - previous[1]
+            self.cpu_cached = 0.0 if total_delta <= 0 else max(0.0, min(100.0, 100.0 * (1 - idle_delta / total_delta)))
+            return self.cpu_cached
+        except (OSError, ValueError, IndexError):
+            return self.cpu_cached
+
+    @staticmethod
+    def get_ram_usage():
+        try:
+            values = {}
+            with open("/proc/meminfo", "r", encoding="ascii") as f:
+                for line in f:
+                    key, value = line.split(":", 1)
+                    if key in ("MemTotal", "MemAvailable"):
+                        values[key] = int(value.strip().split()[0])
+            total = values["MemTotal"]
+            available = values["MemAvailable"]
+            return 0.0 if total <= 0 else 100.0 * (total - available) / total
+        except (OSError, ValueError, KeyError, IndexError):
+            return 0.0
 
     @staticmethod
     def battery_percent(voltage):
