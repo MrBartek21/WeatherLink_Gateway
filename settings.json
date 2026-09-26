@@ -1,0 +1,37 @@
+{
+  "web": {
+    "port": 8080
+  },
+  "nrf": {
+    "ce_pin": 22,
+    "csn_pin": 1,
+    "channel": 50,
+    "address": "WTHLS",
+    "power": 2,
+    "data_rate": 0,
+    "payload_size": 32,
+    "auto_ack": true,
+    "retry_delay": 5,
+    "retry_count": 15
+  },
+  "mqtt": {
+    "enabled": true,
+    "host": "10.0.0.2",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "base_topic": "WeatherLink",
+    "client_id": "weatherlink-gateway",
+    "qos": 1,
+    "retain": true
+  },
+  "oled": {
+    "enabled": true,
+    "i2c_bus": 1,
+    "address": "0x3C",
+    "width": 128,
+    "height": 64,
+    "rotation": 0,
+    "page_seconds": 5
+  }
+}

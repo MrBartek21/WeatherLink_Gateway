@@ -1,0 +1,16 @@
+[Unit]
+Description=WeatherLink Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=d02
+WorkingDirectory=/home/d02/WLGateway
+ExecStart=/usr/bin/python3 /home/d02/WLGateway/app.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
