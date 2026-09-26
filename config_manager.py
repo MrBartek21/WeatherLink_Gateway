@@ -37,7 +37,8 @@ DEFAULT_CONFIG = {
         "width": 128,
         "height": 64,
         "rotation": 0,
-        "page_seconds": 4
+        "page_seconds": 4,
+        "sleep_timeout_seconds": 60
     }
 }
 
@@ -131,6 +132,7 @@ class ConfigManager:
             self.data["oled"]["height"] = int(oled.get("height", 64))
             self.data["oled"]["rotation"] = int(oled.get("rotation", 0))
             self.data["oled"]["page_seconds"] = max(1, int(oled.get("page_seconds", 4)))
+            self.data["oled"]["sleep_timeout_seconds"] = max(0, min(3600, int(oled.get("sleep_timeout_seconds", 60))))
 
         if web:
             self.data["web"]["port"] = int(web.get("port", 8080))

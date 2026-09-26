@@ -26,6 +26,8 @@ class OLEDDisplay:
         self.last_page = time.monotonic()
 
         self.start_time = time.monotonic()
+        self.last_data_time = self.start_time
+        self.display_sleeping = False
         self.cpu_previous = None
         self.cpu_cached = 0.0
         self.cpu_sample_time = 0.0
@@ -125,8 +127,7 @@ class OLEDDisplay:
             try:
                 with self.lock:
 
-                    if self.last_packet:
-                        self.render()
+                    self.render()
 
                 time.sleep(0.2)
 
@@ -234,6 +235,112 @@ class OLEDDisplay:
 
         self.device.display(image)
 
+    def _draw_system_dashboard(self):
+        if not self.available:
+            return
+
+        width = self.device.width
+        height = self.device.height
+        image = Image.new("1", (width, height), 0)
+        draw = ImageDraw.Draw(image)
+        title_font = self._font(10, bold=True)
+        label_font = self._font(8, bold=True)
+        value_font = self._font(15, bold=True)
+        small_font = self._font(7, bold=False)
+
+        draw.text((3, 0), "WEATHERLINK", fill=255, font=title_font)
+        draw.text((width - 38, 2), "SYSTEM", fill=255, font=small_font)
+        draw.line((3, 13, width - 4, 13), fill=255)
+
+        ids = ", ".join(sorted(self.node_packets.keys(), key=int)) or "—"
+        draw.text((3, 16), "NODY", fill=255, font=label_font)
+        draw.text((34, 16), ids[:20], fill=255, font=small_font)
+
+        cpu = self.get_cpu_usage()
+        ram = self.get_ram_usage()
+        col_width = (width - 12) // 2
+        right_x = 6 + col_width
+
+        draw.text((3, 27), "CPU", fill=255, font=label_font)
+        draw.text((right_x, 27), "RAM", fill=255, font=label_font)
+        draw.text((3, 34), f"{cpu:.0f}%", fill=255, font=value_font)
+        draw.text((right_x, 34), f"{ram:.0f}%", fill=255, font=value_font)
+
+        bar_y = 52
+        bar_width = col_width - 5
+        for x, percent in ((3, cpu), (right_x, ram)):
+            draw.rectangle((x, bar_y, x + bar_width, bar_y + 4), outline=255)
+            fill_width = int((bar_width - 2) * max(0, min(100, percent)) / 100)
+            if fill_width:
+                draw.rectangle((x + 1, bar_y + 1, x + fill_width, bar_y + 3), fill=255)
+
+        uptime = f"UP  {self.get_uptime()}"[:20]
+        draw.text((3, 58), uptime, fill=255, font=small_font)
+        self.device.display(image)
+
+    def _draw_node_dashboard(self, node_id, packet, screen):
+        if not self.available:
+            return
+
+        width = self.device.width
+        height = self.device.height
+        image = Image.new("1", (width, height), 0)
+        draw = ImageDraw.Draw(image)
+        title_font = self._font(10, bold=True)
+        label_font = self._font(8, bold=True)
+        value_font = self._font(14, bold=True)
+        small_font = self._font(8, bold=False)
+        status = int(packet.get("status", 0))
+
+        if screen == "weather":
+            draw.rectangle((0, 0, width - 1, 12), fill=255)
+            draw.text((4, 1), "POGODA", fill=0, font=title_font)
+            draw.text((width - 52, 2), f"NODE {node_id}", fill=0, font=small_font)
+
+            draw.text((4, 16), "TEMP AHT20", fill=255, font=label_font)
+            draw.text((4, 25), f"{packet.get('aht_temperature', 0):.1f} C" if status & 0x01 else "--.- C", fill=255, font=value_font)
+            draw.text((70, 16), "WILGOTNOSC", fill=255, font=label_font)
+            draw.text((70, 25), f"{packet.get('aht_humidity', 0):.0f} %" if status & 0x01 else "-- %", fill=255, font=value_font)
+            draw.line((64, 16, 64, 41), fill=255)
+            draw.line((3, 43, width - 4, 43), fill=255)
+
+            draw.text((4, 46), "BMP hPa", fill=255, font=label_font)
+            draw.text((4, 55), f"{packet.get('bmp_pressure', 0) / 100:.0f}" if status & 0x02 else "---", fill=255, font=small_font)
+            draw.line((43, 46, 43, 63), fill=255)
+            draw.text((49, 46), "DS18 C", fill=255, font=label_font)
+            draw.text((49, 55), f"{packet.get('ds_temperature', 0):.1f}" if status & 0x04 else "--.-", fill=255, font=small_font)
+            draw.line((91, 46, 91, 63), fill=255)
+            draw.text((97, 46), "LIGHT", fill=255, font=label_font)
+            draw.text((97, 55), str(packet.get("light", "--")) if status & 0x08 else "---", fill=255, font=small_font)
+        else:
+            draw.rectangle((0, 0, width - 1, 12), fill=255)
+            draw.text((4, 1), "ZASILANIE", fill=0, font=title_font)
+            draw.text((width - 52, 2), f"NODE {node_id}", fill=0, font=small_font)
+
+            has_ina = bool(status & 0x10)
+            voltage = packet.get("ina1_voltage", 0) if has_ina else 0
+            percent = self.battery_percent(voltage) if has_ina else 0
+            draw.text((4, 16), f"{percent:3d}%" if has_ina else " --%", fill=255, font=value_font)
+            draw.text((60, 19), "BATERIA", fill=255, font=label_font)
+            draw.text((60, 29), f"{voltage:.2f} V" if has_ina else "BRAK DANYCH", fill=255, font=small_font)
+            draw.rectangle((3, 36, 53, 44), outline=255)
+            draw.text((7, 37), f"SEQ {packet.get('sequence', '-')}", fill=255, font=self._font(7, bold=True))
+
+            draw.line((3, 46, width - 4, 46), fill=255)
+            draw.text((3, 47), "CH1 A", fill=255, font=label_font)
+            draw.text((45, 47), "CH2 V/A", fill=255, font=label_font)
+            draw.text((91, 47), "CH3 V/A", fill=255, font=label_font)
+            if has_ina:
+                draw.text((3, 55), f"{packet.get('ina1_current', 0):.2f}", fill=255, font=self._font(7))
+                draw.text((45, 55), f"{packet.get('ina2_voltage', 0):.1f}/{packet.get('ina2_current', 0):.2f}", fill=255, font=self._font(7))
+                draw.text((91, 55), f"{packet.get('ina3_voltage', 0):.1f}/{packet.get('ina3_current', 0):.2f}", fill=255, font=self._font(7))
+            else:
+                draw.text((3, 55), "--", fill=255, font=self._font(7))
+                draw.text((45, 55), "--", fill=255, font=self._font(7))
+                draw.text((91, 55), "--", fill=255, font=self._font(7))
+
+        self.device.display(image)
+
     # =========================================================
     # IP
     # =========================================================
@@ -312,6 +419,7 @@ class OLEDDisplay:
             self.last_packet = packet
             node_id = str(packet.get("node_id", 0))
             self.node_packets[node_id] = packet
+            self.last_data_time = time.monotonic()
 
     def update_nodes(self, packets):
         with self.lock:
@@ -319,6 +427,7 @@ class OLEDDisplay:
             if self.node_packets:
                 latest = max(self.node_packets.values(), key=lambda p: p.get("received_at", 0))
                 self.last_packet = latest
+                self.last_data_time = time.monotonic()
 
     # =========================================================
     # BUILD PAGES
@@ -437,6 +546,17 @@ class OLEDDisplay:
         if not self.available:
             return
 
+        sleep_after = self.config.get_int("oled.sleep_timeout_seconds", 60)
+        if sleep_after > 0 and time.monotonic() - self.last_data_time >= sleep_after:
+            if not self.display_sleeping:
+                self.device.hide()
+                self.display_sleeping = True
+            return
+
+        if self.display_sleeping:
+            self.device.show()
+            self.display_sleeping = False
+
         pages = self._build_pages()
 
         if not pages:
@@ -466,9 +586,14 @@ class OLEDDisplay:
 
             self.last_page = now
 
-        self._draw(
-            pages[self.page]
-        )
+        if self.page == len(pages) - 1:
+            self._draw_system_dashboard()
+        else:
+            nodes = sorted(self.node_packets.items(), key=lambda item: int(item[0]))
+            node_index = self.page // 2
+            node_id, packet = nodes[node_index]
+            screen = "weather" if self.page % 2 == 0 else "power"
+            self._draw_node_dashboard(node_id, packet, screen)
 
     # =========================================================
     # TEST
@@ -512,6 +637,8 @@ class OLEDDisplay:
             "available": bool(
                 self.available
             ),
+
+            "sleeping": self.display_sleeping,
 
             "last_sequence":
                 self.last_packet.get(

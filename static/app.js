@@ -79,7 +79,7 @@ async function refresh() {
     const o=s.oled;
     $("oledBadge").textContent=o.available ? "ONLINE" : (o.enabled ? "OFFLINE" : "OFF");
     $("oledBadge").className="badge " + (o.available ? "bg-success" : "bg-secondary");
-    setCell("oledState", o.available ? "Dostępny" : "Niedostępny");
+    setCell("oledState", o.available ? (o.sleeping ? "Wygaszony" : "Dostępny") : "Niedostępny");
   } catch(e) {
     $("rxStatus").textContent="Błąd WebUI";
   }
@@ -94,7 +94,7 @@ async function openSettings() {
   $("mqttEnabled").checked=m.enabled; $("mqttHost").value=m.host; $("mqttPort").value=m.port;
   $("mqttTopicBase").value=m.base_topic; $("mqttUser").value=m.username; $("mqttPass").value="";
   $("mqttQos").value=m.qos; $("mqttRetain").checked=m.retain;
-  $("oledEnabled").checked=o.enabled; $("oledBus").value=o.i2c_bus; $("oledAddress").value=o.address; $("oledSeconds").value=o.page_seconds;
+  $("oledEnabled").checked=o.enabled; $("oledBus").value=o.i2c_bus; $("oledAddress").value=o.address; $("oledSeconds").value=o.page_seconds; $("oledSleep").value=o.sleep_timeout_seconds ?? 60;
   settingsModal ||= new bootstrap.Modal($("settingsModal"));
   settingsModal.show();
 }
@@ -103,7 +103,7 @@ async function saveSettings(restart=false) {
   const body={
     nrf:{ce_pin:+$("ce").value,csn_pin:+$("csn").value,channel:+$("channel").value,address:$("address").value,power:+$("power").value,auto_ack:$("autoAck").checked},
     mqtt:{enabled:$("mqttEnabled").checked,host:$("mqttHost").value,port:+$("mqttPort").value,base_topic:$("mqttTopicBase").value,username:$("mqttUser").value,password:$("mqttPass").value,qos:+$("mqttQos").value,retain:$("mqttRetain").checked},
-    oled:{enabled:$("oledEnabled").checked,i2c_bus:+$("oledBus").value,address:$("oledAddress").value,page_seconds:+$("oledSeconds").value}
+    oled:{enabled:$("oledEnabled").checked,i2c_bus:+$("oledBus").value,address:$("oledAddress").value,page_seconds:+$("oledSeconds").value,sleep_timeout_seconds:+$("oledSleep").value}
   };
   const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
   const x=await r.json();
