@@ -70,10 +70,16 @@ Każdy nadajnik ma dwa cyklicznie wyświetlane ekrany:
 Po ekranach nadajników wyświetlany jest jeden ekran systemowy gatewaya z listą
 Node ID, uptime oraz użyciem CPU i RAM. Domyślna konfiguracja OLED to I2C bus 1,
 adres `0x3C` i rozdzielczość 128×64. Czas wyświetlania strony ustawia
-`oled.page_seconds`. Jeśli żaden nadajnik nie wysyła danych przez 60 sekund,
-wyświetlacz przechodzi w tryb uśpienia sprzętowego; po odebraniu kolejnego
-pakietu budzi się automatycznie. Czas ustawia `oled.sleep_timeout_seconds`;
-wartość `0` wyłącza wygaszacz. Ustawienie jest też dostępne w oknie konfiguracji.
+`oled.page_seconds`. Podczas uruchamiania OLED pokazuje ekran powitalny z logo
+WeatherLink Gateway; po odebraniu danych przechodzi do ekranów pomiarowych.
+Konfigurowalny, cykliczny wygaszacz działa również podczas normalnego odbioru
+pakietów. Domyślnie ekran jest włączony przez 300 sekund, wygaszony przez 60
+sekund, a potem automatycznie wraca do aktualnych danych. Można go wyłączyć
+przełącznikiem w konfiguracji OLED lub zmienić oba czasy.
+Wygaszacz OLED jest dostępny w konfiguracji i działa cyklicznie, niezależnie od
+tego, czy nadajniki wysyłają dane. Domyślnie ekran świeci przez 300 sekund,
+pozostaje wygaszony przez 60 sekund i następnie pokazuje aktualne dane. Można
+wyłączyć wygaszacz przełącznikiem albo zmienić oba czasy w ustawieniach OLED.
 
 ## MQTT
 

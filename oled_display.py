@@ -26,7 +26,8 @@ class OLEDDisplay:
         self.last_page = time.monotonic()
 
         self.start_time = time.monotonic()
-        self.last_data_time = self.start_time
+        self.screen_awake_since = time.monotonic()
+        self.screen_wake_at = None
         self.display_sleeping = False
         self.cpu_previous = None
         self.cpu_cached = 0.0
@@ -91,13 +92,11 @@ class OLEDDisplay:
             )
 
             self.available = True
+            self.screen_awake_since = time.monotonic()
+            self.screen_wake_at = None
+            self.display_sleeping = False
 
-            self._draw([
-                "WeatherLink",
-                "Gateway",
-                "",
-                "OLED OK"
-            ])
+            self._draw_splash()
 
             self.running = True
 
@@ -126,8 +125,10 @@ class OLEDDisplay:
 
             try:
                 with self.lock:
-
-                    self.render()
+                    if self.last_packet:
+                        self.render()
+                    else:
+                        self._tick_screen_saver()
 
                 time.sleep(0.2)
 
@@ -233,6 +234,31 @@ class OLEDDisplay:
             if y >= self.device.height:
                 break
 
+        self.device.display(image)
+
+    def _draw_splash(self):
+        if not self.available:
+            return
+
+        width, height = self.device.width, self.device.height
+        image = Image.new("1", (width, height), 0)
+        draw = ImageDraw.Draw(image)
+        large = self._font(13, bold=True)
+        medium = self._font(10, bold=True)
+        small = self._font(8)
+
+        # Prosta ikona słońca nad horyzontem.
+        draw.ellipse((10, 10, 30, 30), outline=255, width=2)
+        draw.line((20, 5, 20, 9), fill=255, width=2)
+        draw.line((20, 31, 20, 35), fill=255, width=2)
+        draw.line((5, 20, 9, 20), fill=255, width=2)
+        draw.line((31, 20, 35, 20), fill=255, width=2)
+        draw.arc((0, 24, 40, 48), 200, 340, fill=255, width=2)
+
+        draw.text((43, 7), "WEATHERLINK", fill=255, font=medium)
+        draw.text((43, 22), "GATEWAY", fill=255, font=large)
+        draw.line((8, 43, width - 8, 43), fill=255)
+        draw.text((15, 49), "URUCHAMIANIE STACJI...", fill=255, font=small)
         self.device.display(image)
 
     def _draw_system_dashboard(self):
@@ -419,7 +445,6 @@ class OLEDDisplay:
             self.last_packet = packet
             node_id = str(packet.get("node_id", 0))
             self.node_packets[node_id] = packet
-            self.last_data_time = time.monotonic()
 
     def update_nodes(self, packets):
         with self.lock:
@@ -427,7 +452,6 @@ class OLEDDisplay:
             if self.node_packets:
                 latest = max(self.node_packets.values(), key=lambda p: p.get("received_at", 0))
                 self.last_packet = latest
-                self.last_data_time = time.monotonic()
 
     # =========================================================
     # BUILD PAGES
@@ -546,16 +570,8 @@ class OLEDDisplay:
         if not self.available:
             return
 
-        sleep_after = self.config.get_int("oled.sleep_timeout_seconds", 60)
-        if sleep_after > 0 and time.monotonic() - self.last_data_time >= sleep_after:
-            if not self.display_sleeping:
-                self.device.hide()
-                self.display_sleeping = True
+        if not self._tick_screen_saver():
             return
-
-        if self.display_sleeping:
-            self.device.show()
-            self.display_sleeping = False
 
         pages = self._build_pages()
 
@@ -594,6 +610,38 @@ class OLEDDisplay:
             node_id, packet = nodes[node_index]
             screen = "weather" if self.page % 2 == 0 else "power"
             self._draw_node_dashboard(node_id, packet, screen)
+
+    def _tick_screen_saver(self):
+        if not self.available:
+            return False
+
+        enabled = bool(self.config.get("oled.screen_saver_enabled", True))
+        if not enabled:
+            if self.display_sleeping:
+                self.device.show()
+                self.display_sleeping = False
+            self.screen_awake_since = time.monotonic()
+            self.screen_wake_at = None
+            return True
+
+        now = time.monotonic()
+        if self.display_sleeping:
+            if self.screen_wake_at is not None and now < self.screen_wake_at:
+                return False
+            self.device.show()
+            self.display_sleeping = False
+            self.screen_awake_since = now
+            self.screen_wake_at = None
+            return True
+
+        on_seconds = max(1, self.config.get_int("oled.screen_on_seconds", 300))
+        if now - self.screen_awake_since >= on_seconds:
+            self.device.hide()
+            self.display_sleeping = True
+            off_seconds = max(1, self.config.get_int("oled.screen_off_seconds", 60))
+            self.screen_wake_at = now + off_seconds
+            return False
+        return True
 
     # =========================================================
     # TEST

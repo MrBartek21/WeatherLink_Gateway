@@ -33,6 +33,8 @@
     "height": 64,
     "rotation": 0,
     "page_seconds": 5,
-    "sleep_timeout_seconds": 60
+    "screen_saver_enabled": true,
+    "screen_on_seconds": 300,
+    "screen_off_seconds": 60
   }
 }
