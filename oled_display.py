@@ -5,10 +5,14 @@ import os
 
 try:
     from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    Image = ImageDraw = ImageFont = None
+
+try:
     from luma.core.interface.serial import i2c
     from luma.oled.device import ssd1306
 except ImportError:
-    Image = ImageDraw = ImageFont = i2c = ssd1306 = None
+    i2c = ssd1306 = None
 
 
 class OLEDDisplay:
@@ -141,30 +145,27 @@ class OLEDDisplay:
     # =========================================================
 
     def _font(self, size=11, bold=False):
-
-        paths = []
-
+        # Małe fonty (7–8 px) zlewają się po rasteryzacji na monochromatycznym OLED.
+        size = max(9, size)
+        font_path = os.path.join(os.path.dirname(__file__), "assets", "RobotoCondensed.ttf")
+        font = ImageFont.truetype(font_path, size)
         if bold:
-            paths = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-            ]
-        else:
-            paths = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-            ]
-
-        for path in paths:
-
             try:
-                return ImageFont.truetype(
-                    path,
-                    size
-                )
-            except Exception:
+                font.set_variation_by_name("Bold")
+            except (AttributeError, OSError, ValueError):
                 pass
+        return font
 
-        return ImageFont.load_default()
+    def _draw_text(self, draw, xy, text, fill=255, font=None):
+        font = font if font is not None else self._font()
+        x, y = xy
+        text = str(text)
+        max_width = max(0, self.device.width - x)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        while text and bbox[2] - bbox[0] > max_width:
+            text = text[:-1]
+            bbox = draw.textbbox((0, 0), text, font=font)
+        draw.text((x - bbox[0], y - bbox[1]), text, fill=fill, font=font)
 
     # =========================================================
     # DRAW
@@ -222,7 +223,7 @@ class OLEDDisplay:
 
             # OLED 128 px – ograniczenie długości
             # zależne od czcionki.
-            draw.text(
+            self._draw_text(draw,
                 (0, y),
                 text[:22],
                 fill=255,
@@ -243,9 +244,9 @@ class OLEDDisplay:
         width, height = self.device.width, self.device.height
         image = Image.new("1", (width, height), 0)
         draw = ImageDraw.Draw(image)
-        large = self._font(13, bold=True)
-        medium = self._font(10, bold=True)
-        small = self._font(8)
+        large = self._font(16, bold=True)
+        medium = self._font(12, bold=True)
+        small = self._font(10)
 
         # Prosta ikona słońca nad horyzontem.
         draw.ellipse((10, 10, 30, 30), outline=255, width=2)
@@ -255,10 +256,10 @@ class OLEDDisplay:
         draw.line((31, 20, 35, 20), fill=255, width=2)
         draw.arc((0, 24, 40, 48), 200, 340, fill=255, width=2)
 
-        draw.text((43, 7), "WEATHERLINK", fill=255, font=medium)
-        draw.text((43, 22), "GATEWAY", fill=255, font=large)
-        draw.line((8, 43, width - 8, 43), fill=255)
-        draw.text((15, 49), "URUCHAMIANIE STACJI...", fill=255, font=small)
+        self._draw_text(draw, (43, 7), "WEATHERLINK", fill=255, font=medium)
+        self._draw_text(draw, (43, 22), "GATEWAY", fill=255, font=large)
+        draw.line((4, 43, width - 4, 43), fill=255)
+        self._draw_text(draw, (47, 49), "LOADING...", fill=255, font=small)
         self.device.display(image)
 
     def _draw_system_dashboard(self):
@@ -269,39 +270,40 @@ class OLEDDisplay:
         height = self.device.height
         image = Image.new("1", (width, height), 0)
         draw = ImageDraw.Draw(image)
-        title_font = self._font(10, bold=True)
+        title_font = self._font(12, bold=True)
         label_font = self._font(8, bold=True)
         value_font = self._font(15, bold=True)
         small_font = self._font(7, bold=False)
 
-        draw.text((3, 0), "WEATHERLINK", fill=255, font=title_font)
-        draw.text((width - 38, 2), "SYSTEM", fill=255, font=small_font)
+        self._draw_text(draw, (3, 1), "WEATHERLINK", fill=255, font=title_font)
+        self._draw_text(draw, (width - 38, 3), "SYSTEM", fill=255, font=small_font)
         draw.line((3, 13, width - 4, 13), fill=255)
 
         ids = ", ".join(sorted(self.node_packets.keys(), key=int)) or "—"
-        draw.text((3, 16), "NODY", fill=255, font=label_font)
-        draw.text((34, 16), ids[:20], fill=255, font=small_font)
+        self._draw_text(draw, (3, 16), "NODY", fill=255, font=label_font)
+        self._draw_text(draw, (34, 16), ids[:20], fill=255, font=small_font)
 
         cpu = self.get_cpu_usage()
         ram = self.get_ram_usage()
         col_width = (width - 12) // 2
         right_x = 6 + col_width
 
-        draw.text((3, 27), "CPU", fill=255, font=label_font)
-        draw.text((right_x, 27), "RAM", fill=255, font=label_font)
-        draw.text((3, 34), f"{cpu:.0f}%", fill=255, font=value_font)
-        draw.text((right_x, 34), f"{ram:.0f}%", fill=255, font=value_font)
+        self._draw_text(draw, (3, 27), "CPU", fill=255, font=label_font)
+        self._draw_text(draw, (right_x, 27), "RAM", fill=255, font=label_font)
+        self._draw_text(draw, (3, 36), f"{cpu:.0f}%", fill=255, font=value_font)
+        self._draw_text(draw, (right_x, 36), f"{ram:.0f}%", fill=255, font=value_font)
 
-        bar_y = 52
-        bar_width = col_width - 5
-        for x, percent in ((3, cpu), (right_x, ram)):
-            draw.rectangle((x, bar_y, x + bar_width, bar_y + 4), outline=255)
-            fill_width = int((bar_width - 2) * max(0, min(100, percent)) / 100)
-            if fill_width:
-                draw.rectangle((x + 1, bar_y + 1, x + fill_width, bar_y + 3), fill=255)
+        #bar_y = 52
+        #bar_width = col_width - 5
+        #for x, percent in ((3, cpu), (right_x, ram)):
+        #    draw.rectangle((x, bar_y, x + bar_width, bar_y + 4), outline=255)
+        #    fill_width = int((bar_width - 2) * max(0, min(100, percent)) / 100)
+        #    if fill_width:
+        #        draw.rectangle((x + 1, bar_y + 1, x + fill_width, bar_y + 3), fill=255)
 
+        draw.line((3, 51, width - 4, 51), fill=255)
         uptime = f"UP  {self.get_uptime()}"[:20]
-        draw.text((3, 58), uptime, fill=255, font=small_font)
+        self._draw_text(draw, (3, 55), uptime, fill=255, font=small_font)
         self.device.display(image)
 
     def _draw_node_dashboard(self, node_id, packet, screen):
@@ -312,7 +314,7 @@ class OLEDDisplay:
         height = self.device.height
         image = Image.new("1", (width, height), 0)
         draw = ImageDraw.Draw(image)
-        title_font = self._font(10, bold=True)
+        title_font = self._font(12, bold=True)
         label_font = self._font(8, bold=True)
         value_font = self._font(14, bold=True)
         small_font = self._font(8, bold=False)
@@ -320,50 +322,51 @@ class OLEDDisplay:
 
         if screen == "weather":
             draw.rectangle((0, 0, width - 1, 12), fill=255)
-            draw.text((4, 1), "POGODA", fill=0, font=title_font)
-            draw.text((width - 52, 2), f"NODE {node_id}", fill=0, font=small_font)
+            self._draw_text(draw, (4, 1), "WEATHER", fill=0, font=title_font)
+            self._draw_text(draw, (width - 52, 3), f"NODE {node_id}", fill=0, font=small_font)
 
-            draw.text((4, 16), "TEMP AHT20", fill=255, font=label_font)
-            draw.text((4, 25), f"{packet.get('aht_temperature', 0):.1f} C" if status & 0x01 else "--.- C", fill=255, font=value_font)
-            draw.text((70, 16), "WILGOTNOSC", fill=255, font=label_font)
-            draw.text((70, 25), f"{packet.get('aht_humidity', 0):.0f} %" if status & 0x01 else "-- %", fill=255, font=value_font)
-            draw.line((64, 16, 64, 41), fill=255)
+
+            self._draw_text(draw, (4, 18), "TEMP", fill=255, font=label_font)
+            self._draw_text(draw, (4, 29), f"{packet.get('aht_temperature', 0):.1f} C" if status & 0x01 else "--.- C", fill=255, font=value_font)
+            self._draw_text(draw, (70, 18), "HUM", fill=255, font=label_font)
+            self._draw_text(draw, (70, 29), f"{packet.get('aht_humidity', 0):.0f} %" if status & 0x01 else "-- %", fill=255, font=value_font)
+            draw.line((64, 12, 64, 43), fill=255)
             draw.line((3, 43, width - 4, 43), fill=255)
 
-            draw.text((4, 46), "BMP hPa", fill=255, font=label_font)
-            draw.text((4, 55), f"{packet.get('bmp_pressure', 0) / 100:.0f}" if status & 0x02 else "---", fill=255, font=small_font)
-            draw.line((43, 46, 43, 63), fill=255)
-            draw.text((49, 46), "DS18 C", fill=255, font=label_font)
-            draw.text((49, 55), f"{packet.get('ds_temperature', 0):.1f}" if status & 0x04 else "--.-", fill=255, font=small_font)
-            draw.line((91, 46, 91, 63), fill=255)
-            draw.text((97, 46), "LIGHT", fill=255, font=label_font)
-            draw.text((97, 55), str(packet.get("light", "--")) if status & 0x08 else "---", fill=255, font=small_font)
+            self._draw_text(draw, (4, 46), "BMP hPa", fill=255, font=label_font)
+            self._draw_text(draw, (4, 55), f"{packet.get('bmp_pressure', 0) / 100:.0f}" if status & 0x02 else "---", fill=255, font=small_font)
+            draw.line((43, 44, 43, 64), fill=255)
+            self._draw_text(draw, (49, 46), "DS18B20", fill=255, font=label_font)
+            self._draw_text(draw, (49, 55), f"{packet.get('ds_temperature', 0):.1f}" if status & 0x04 else "--.-", fill=255, font=small_font)
+            draw.line((91, 44, 91, 64), fill=255)
+            self._draw_text(draw, (97, 46), "LIGHT", fill=255, font=label_font)
+            self._draw_text(draw, (97, 55), str(packet.get("light", "--")) if status & 0x08 else "---", fill=255, font=small_font)
         else:
             draw.rectangle((0, 0, width - 1, 12), fill=255)
-            draw.text((4, 1), "ZASILANIE", fill=0, font=title_font)
-            draw.text((width - 52, 2), f"NODE {node_id}", fill=0, font=small_font)
+            self._draw_text(draw, (4, 1), "POWER", fill=0, font=title_font)
+            self._draw_text(draw, (width - 52, 3), f"NODE {node_id}", fill=0, font=small_font)
 
             has_ina = bool(status & 0x10)
             voltage = packet.get("ina1_voltage", 0) if has_ina else 0
             percent = self.battery_percent(voltage) if has_ina else 0
-            draw.text((4, 16), f"{percent:3d}%" if has_ina else " --%", fill=255, font=value_font)
-            draw.text((60, 19), "BATERIA", fill=255, font=label_font)
-            draw.text((60, 29), f"{voltage:.2f} V" if has_ina else "BRAK DANYCH", fill=255, font=small_font)
-            draw.rectangle((3, 36, 53, 44), outline=255)
-            draw.text((7, 37), f"SEQ {packet.get('sequence', '-')}", fill=255, font=self._font(7, bold=True))
+            self._draw_text(draw, (4, 18), f"{percent:3d}%" if has_ina else " --%", fill=255, font=value_font)
+            self._draw_text(draw, (60, 19), "BATTERY", fill=255, font=label_font)
+            self._draw_text(draw, (60, 29), f"{voltage:.2f} V" if has_ina else "N/A", fill=255, font=small_font)
+            #draw.rectangle((3, 36, 53, 44), outline=255)
+            self._draw_text(draw, (7, 35), f"SEQ {packet.get('sequence', '-')}", fill=255, font=self._font(7, bold=True))
 
-            draw.line((3, 46, width - 4, 46), fill=255)
-            draw.text((3, 47), "CH1 A", fill=255, font=label_font)
-            draw.text((45, 47), "CH2 V/A", fill=255, font=label_font)
-            draw.text((91, 47), "CH3 V/A", fill=255, font=label_font)
+            draw.line((3, 44, width - 4, 44), fill=255)
+            self._draw_text(draw, (3, 46), "CH1", fill=255, font=label_font)
+            self._draw_text(draw, (45, 46), "CH2", fill=255, font=label_font)
+            self._draw_text(draw, (91, 46), "CH3", fill=255, font=label_font)
             if has_ina:
-                draw.text((3, 55), f"{packet.get('ina1_current', 0):.2f}", fill=255, font=self._font(7))
-                draw.text((45, 55), f"{packet.get('ina2_voltage', 0):.1f}/{packet.get('ina2_current', 0):.2f}", fill=255, font=self._font(7))
-                draw.text((91, 55), f"{packet.get('ina3_voltage', 0):.1f}/{packet.get('ina3_current', 0):.2f}", fill=255, font=self._font(7))
+                self._draw_text(draw, (3, 55), f"{packet.get('ina1_current', 0):.2f}", fill=255, font=self._font(7))
+                self._draw_text(draw, (45, 55), f"{packet.get('ina2_voltage', 0):.1f} / {packet.get('ina2_current', 0):.2f}", fill=255, font=self._font(7))
+                self._draw_text(draw, (91, 55), f"{packet.get('ina3_voltage', 0):.1f} / {packet.get('ina3_current', 0):.2f}", fill=255, font=self._font(7))
             else:
-                draw.text((3, 55), "--", fill=255, font=self._font(7))
-                draw.text((45, 55), "--", fill=255, font=self._font(7))
-                draw.text((91, 55), "--", fill=255, font=self._font(7))
+                self._draw_text(draw, (3, 55), "--", fill=255, font=self._font(7))
+                self._draw_text(draw, (45, 55), "--", fill=255, font=self._font(7))
+                self._draw_text(draw, (91, 55), "--", fill=255, font=self._font(7))
 
         self.device.display(image)
 
@@ -550,6 +553,8 @@ class OLEDDisplay:
     @staticmethod
     def battery_percent(voltage):
         # Przybliżona krzywa spoczynkowa dla typowego pakietu Li-ion/LiPo 1S.
+        if voltage <= 0.6:
+            return 0
         curve = [(3.00, 0), (3.30, 5), (3.50, 10), (3.60, 20),
                  (3.70, 40), (3.80, 60), (3.90, 75), (4.00, 85),
                  (4.10, 95), (4.20, 100)]
