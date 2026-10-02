@@ -18,6 +18,8 @@ function showMessage(text, ok=true) {
 function setCell(id, text) { $(id).textContent = text; }
 
 function batteryPercent(voltage) {
+  if (!Number.isFinite(Number(voltage)) || Number(voltage) <= 0.6) return 0;
+  voltage = Number(voltage);
   const curve = [[3.00,0],[3.30,5],[3.50,10],[3.60,20],[3.70,40],
     [3.80,60],[3.90,75],[4.00,85],[4.10,95],[4.20,100]];
   if (voltage <= curve[0][0]) return 0;
