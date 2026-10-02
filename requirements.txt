@@ -3,5 +3,4 @@ paho-mqtt>=2.0,<3
 Pillow>=10,<12
 luma.core>=2.4,<3
 luma.oled>=3.13,<4
-RPi.GPIO>=0.7
 pyrf24>=0.6,<1

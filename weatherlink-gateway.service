@@ -5,9 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=d02
-WorkingDirectory=/home/d02/WLGateway
-ExecStart=/usr/bin/python3 /home/d02/WLGateway/app.py
+User=ndn01
+SupplementaryGroups=gpio spi i2c
+WorkingDirectory=/home/ndn01/Gateway
+ExecStart=/home/ndn01/Gateway/.venv/bin/python /home/ndn01/Gateway/app.py
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1
